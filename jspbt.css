@@ -1,0 +1,77 @@
+#screen {
+  font-family: monospace;
+  background: black;
+  color: gray;
+  white-space: pre;
+}
+
+
+.fg0:not(.rev), .bg0.rev {
+  color: black;
+}
+.fg1:not(.rev), .bg1.rev {
+  color: red;
+}
+.fg2:not(.rev), .bg2.rev {
+  color: green;
+}
+.fg3:not(.rev), .bg3.rev {
+  color: yellow;
+}
+.fg4:not(.rev), .bg4.rev {
+  color: blue;
+}
+.fg5:not(.rev), .bg5.rev {
+  color: magenta;
+}
+.fg6:not(.rev), .bg6.rev {
+  color: cyan;
+}
+.fg7:not(.rev), .bg7.rev {
+  color: gray;
+}
+
+
+.bg0:not(.rev), .fg0.rev {
+  background: black;
+}
+.bg1:not(.rev), .fg1.rev {
+  background: red;
+}
+.bg2:not(.rev), .fg2.rev {
+  background: green;
+}
+.bg3:not(.rev), .fg3.rev {
+  background: yellow;
+}
+.bg4:not(.rev), .fg4.rev {
+  background: blue;
+}
+.bg5:not(.rev), .fg5.rev {
+  background: magenta;
+}
+.bg6:not(.rev), .fg6.rev {
+  background: cyan;
+}
+.bg7:not(.rev), .fg7.rev {
+  background: gray;
+}
+
+
+.b {
+  font-weight: bold;
+  /* TODO(sdh): brighter colors */
+}
+.fg0.b {
+  color: #444;
+}
+
+.i {
+  text-style: italic;
+}
+
+.u {
+  text-decoration: underline;
+}
+
+/* TODO(sdh): blink? */
