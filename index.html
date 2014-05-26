@@ -1,10 +1,17 @@
 <!DOCTYPE html>
 <link rel="stylesheet" href="jspbt.css">
-<input type="file" id="files" multiple>
-<input type="submit" id="fetch" value="play">
-<input type="submit" id="next" value="next" disabled>
-<output id="selected"></output>
-<div id="time"></div>
+<div id="loadForm">
+  <input type="file" id="files" multiple>
+  <input type="submit" id="fetch" value="load">
+  <output id="selected"></output>
+</div>
+<div id="playForm" style="display: none;">
+  <input type="submit" id="play" value="play">
+  <input type="submit" id="next" value="next">
+  Speed: <span id="speedDisplay">100%</span>
+  <input type="range" id="speed" value="0" min="-0.5" max="2" step="0.1">
+  <div id="time"></div>
+</div>
 <div id="screen" style="width: 650px; float: left;"></div>
-<div id="log" style="display: inline-block; overflow-y: scroll; font-family: monospace; white-space: pre"></div>
+<div id="log" style="display: inline-block; display: none; overflow-y: scroll; font-family: monospace; white-space: pre"></div>
 <script src="jspbt.js"></script>

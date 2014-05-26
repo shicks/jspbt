@@ -1,10 +1,9 @@
 (function() {
 
 // TODO(sdh): bz2 support: https://github.com/antimatter15/bzip2.js
+
 /**
- * Models a TTYREC file.
- * @param {!ArrayBuffer} buffer
- * @return {{
+ * @typedef {{
  *   data: function(): DataView,
  *   time: function(): Date,
  *   delayMs: function(): number,
@@ -13,6 +12,31 @@
  *   advance: function()
  * }}
  */
+var TtyRec;
+
+/**
+ * @typedef {{
+ *   write: function(DataView)
+ * }}
+ */
+var Terminal;
+
+/**
+ * @typedef {{
+ *   play: function(boolean),    // toggles play/pause
+ *   speed: function(): number,  // returns the speed
+ *   setSpeed: function(number),
+ *   advance: function(number),  // advances a number of frames
+ *   onframe: function()         // called on each frame
+ * }}
+ */
+var Player;   
+
+/**
+ * Models a TTYREC file.
+ * @param {!ArrayBuffer} buffer
+ * @return {!TtyRec}
+ */
 function ttyRec(arrayBuffer) {
   var view = new DataView(arrayBuffer);
   var pos = 0;
@@ -20,16 +44,19 @@ function ttyRec(arrayBuffer) {
   var framePositions = [0];
 
   function len(start) {
+    if (start >= arrayBuffer.byteLength) return 0;
     return view.getUint32(start + 8, true);
   }
 
   function timeMs(start) {
+    if (start >= arrayBuffer.byteLength) return 0;
     return view.getUint32(start, true) * 1000 +
         view.getUint32(start + 4, true) / 1000;
   }
 
   return {
     data: function() {
+      if (pos >= arrayBuffer.byteLength) return new DataView(arrayBuffer, 0, 0);
       return new DataView(arrayBuffer, pos + 12, len(pos));
     },
     time: function() {
@@ -37,8 +64,8 @@ function ttyRec(arrayBuffer) {
     },
     delayMs: function() {
       var next = pos + 12 + len(pos);
-      if (next < view.byteLength) return 0;
-      return timeMs(next) - timeMs(pos);
+      if (next >= view.byteLength) return 0;
+      return Math.max(0, timeMs(next) - timeMs(pos));
     },
     frame: function() {
       return frame;
@@ -56,6 +83,67 @@ function ttyRec(arrayBuffer) {
   };
 }
 
+
+/**
+ * The TTYREC player.  Handles timing/play/pause, as well as rewind.
+ * @param {!TtyRec} ttyRec
+ * @param {!Terminal} terminal
+ * @return {!Player}
+ */
+function player(ttyRec, terminal) {
+  var speed = 1;
+  var playing = false;
+  var timeout = null;
+  var waitedMs = 0;
+  var nextFrameMs = 0;
+
+  function transform(delay) {
+    // TODO(sdh): more natural cap for delay?
+    delay /= speed;
+    if (delay > 2000) delay = 2000;
+    return delay;
+  }
+
+  function advance(frames) {
+    if (frames == null) frames = 1;
+    if (timeout) clearTimeout(timeout);
+    timeout = null;
+    if (frames < 0) return; // TODO(sdh): support backtracking
+    player.onframe();
+    while (frames--) ttyRec.advance();
+    terminal.write(ttyRec.data());
+    waitedMs = 0;
+    if (playing) {
+      var delay = transform(ttyRec.delayMs());
+      nextFrameMs = +new Date() + delay;
+      timeout = setTimeout(advance, delay);
+    }
+  }
+
+  var player = {
+    play: function(play) {
+      if (playing == play) return;
+      playing = play;
+      if (playing) {
+        var delay = Math.max(transform(ttyRec.delayMs()) - waitedMs, 0);
+        timeout = setTimeout(advance, delay);
+      } else {
+        // TODO(sdh): set waitedMs
+      }
+    },
+    advance: advance,
+    speed: function() { return speed; },
+    setSpeed: function(newSpeed) {
+      speed = newSpeed;
+      // TODO(sdh): reset the timer, using the current amount waited...
+    },
+    onframe: function() {}
+  };
+
+  return player;
+}
+
+
 // TODO(sdh): caching ttyRec wrapper that keeps track of all the \e[2J it sees
 // Provides a "previous frame" function that redraws cleverly...?
 
@@ -64,9 +152,7 @@ function ttyRec(arrayBuffer) {
 /**
  * Models the terminal.
  * @param {!Element} e
- * @return {{
- *   write: function(DataView)
- * }}
+ * @return {!Terminal}
  */
 function terminalEmulator(e) {
 
@@ -114,12 +200,12 @@ function terminalEmulator(e) {
       break;
     default: // 0
       // erase from cursor to end of screen
-      while (e.children.length > $.r + 1) {
-        e.children[$.r + 1].remove();
+      while (e.children.length > $.r /* + 1 */) {
+        e.children[$.r /* + 1 */].remove();
       }
       var row = e.children[$.r];
-      while (row && row.children.length > $.c + 1) {
-        row.children[$.c + 1].remove();
+      while (row && row.children.length > $.c /* + 1 */) {
+        row.children[$.c /* + 1 */].remove();
       }
     }
   }
@@ -140,8 +226,8 @@ function terminalEmulator(e) {
       break;
     default: // 0
       // erase from cursor to end of screen
-      while (row && row.children.length > $.c + 1) {
-        row.children[$.c + 1].remove();
+      while (row && row.children.length > $.c /* + 1 */) {
+        row.children[$.c /* + 1 */].remove();
       }
     }
   }
@@ -153,7 +239,7 @@ function terminalEmulator(e) {
       return;
     }
     // parse arguments...
-    window.console.log('\\e[' + [].join.call(arguments, ';') + 'm');
+    //window.console.log('\\e[' + [].join.call(arguments, ';') + 'm');
     for (var i = 0; i < arguments.length; i++) {
       var c = arguments[i];
       if (c == 1) $.b = true;
@@ -286,7 +372,7 @@ function terminalEmulator(e) {
   return {
     /** @param {DataView} data */
     write: function(data) {
-      hexDump(data); // Log the packet
+      //hexDump(data); // Log the packet
       var i = 0;
       var chars = [];
       while (i < data.byteLength) {
@@ -395,10 +481,26 @@ function loadTtyRec(buf) {
   var file = ttyRec(buf);
   terminal.write(file.data());
 
-  var next = document.getElementById('next');
-  next.disabled = false;
-  next.addEventListener('click', function() {
-    advanceFrame(file, terminal);
+  var p = player(file, terminal);
+  p.onframe = function() {
+    document.getElementById('time').textContent = file.time() + '';
+  };
+
+  document.getElementById('loadForm').style.display = 'none';
+  document.getElementById('playForm').style.display = 'block';
+  document.getElementById('next').addEventListener('click', function() {
+    p.advance();
+  });
+  var playButton = document.getElementById('play');
+  playButton.addEventListener('click', function() {
+    var play = playButton.value == 'play';
+    p.play(play);
+    playButton.value = play ? 'pause' : 'play';
+  });
+  document.getElementById('speed').addEventListener('change', function(e) {
+    var speed = Math.pow(10, e.target.value);
+    p.setSpeed(speed);
+    document.getElementById('speedDisplay').textContent = Math.floor(speed * 100) + '%';
   });
 }
 
