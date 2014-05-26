@@ -497,7 +497,7 @@ function loadTtyRec(buf) {
     p.play(play);
     playButton.value = play ? 'pause' : 'play';
   });
-  document.getElementById('speed').addEventListener('change', function(e) {
+  document.getElementById('speed').addEventListener('input', function(e) {
     var speed = Math.pow(10, e.target.value);
     p.setSpeed(speed);
     document.getElementById('speedDisplay').textContent = Math.floor(speed * 100) + '%';

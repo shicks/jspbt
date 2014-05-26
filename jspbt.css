@@ -5,6 +5,16 @@
   white-space: pre;
 }
 
+#screen div {
+  height: 17px;
+  overflow: hidden;
+}
+
+#screen div span {
+  width: 8px; /* NOTE: font-dependent... */
+  display: inline-block;
+  overflow: hidden;
+}
 
 .fg0:not(.rev), .bg0.rev {
   color: black;
