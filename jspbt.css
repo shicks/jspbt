@@ -69,28 +69,28 @@
 
 
 .bg0:not(.rev), .fg0.rev {
-  color: #000000;  /* black */
+  background: #000000;  /* black */
 }
 .bg1:not(.rev), .fg1.rev {
-  color: #c81a00;  /* red */
+  background: #c81a00;  /* red */
 }
 .bg2:not(.rev), .fg2.rev {
-  color: #00c300;  /* green */
+  background: #00c300;  /* green */
 }
 .bg3:not(.rev), .fg3.rev {
-  color: #c7c500;  /* yellow */
+  background: #c7c500;  /* yellow */
 }
 .bg4:not(.rev), .fg4.rev {
-  color: #0225c7;  /* blue */
+  background: #0225c7;  /* blue */
 }
 .bg5:not(.rev), .fg5.rev {
-  color: #ca30c7;  /* magenta */
+  background: #ca30c7;  /* magenta */
 }
 .bg6:not(.rev), .fg6.rev {
-  color: #00c5c7;  /* cyan */
+  background: #00c5c7;  /* cyan */
 }
 .bg7:not(.rev), .fg7.rev {
-  color: #c7c7c7;  /* light gray */
+  background: #c7c7c7;  /* light gray */
 }
 
 
