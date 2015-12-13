@@ -169,6 +169,9 @@ function terminalEmulator(e) {
     bg: 0
   };
 
+  // leftover chars in case frame broke in middle of control sequence
+  var leftover = [];
+
   function move(row, col) {
     $.r = Math.max(0, row);
     $.c = Math.max(0, col);
@@ -272,7 +275,8 @@ function terminalEmulator(e) {
     var nums = [];
     var cur = 0;
     while (i < view.byteLength) {
-      var cc = view.getUint8(++i);
+      if (i + 1 >= view.byteLength) return -1;
+      var cc = getU8(view, ++i);
       if (cc < 0x30 || cc > 0x3b || cc == 0x3a) { // 3a=:, 3b=;
         break;
       }
@@ -284,7 +288,8 @@ function terminalEmulator(e) {
       }
     }
     if (any) nums.push(cur);
-    var cmd = String.fromCharCode(view.getUint8(i));
+    if (i >= view.byteLength) return -1;
+    var cmd = String.fromCharCode(getU8(view, i));
     if (!brk[cmd]) {
       window.console.log('Unknown bracket escape: ' + cmd);
       log('Unknown bracket escape: ' + cmd);
@@ -369,14 +374,25 @@ function terminalEmulator(e) {
     }
   }
 
+  function getU8(data, i) {
+    if (i < 0) {
+      return leftover[leftover.length + i];
+    }
+    var b = data.getUint8(i);
+    leftover.push(b);
+    return b;
+  }
+
   return {
     /** @param {DataView} data */
     write: function(data) {
       //hexDump(data); // Log the packet
-      var i = 0;
+      var i = -leftover.length;
       var chars = [];
+      var unused = [];
       while (i < data.byteLength) {
-        var cur = data.getUint8(i);
+        //if (i > 0) leftover = [];
+        var cur = getU8(data, i);
         var width = 0;
         var bit = 0x80;
         while (cur & bit) {
@@ -385,17 +401,20 @@ function terminalEmulator(e) {
           width++;          
         }
         while (width-- > 1) {
-          var cont = data.getUint8(++i);
+          if (i + 1 >= data.byteLength) return;
+          var cont = getU8(data, ++i);
           cur = (cur << 6) + (cont & 0x3f);
         }
         if (cur == 0x1b) {
           emitChars(chars);
-          var cmd = String.fromCharCode(data.getUint8(++i));
+          if (i + 1 >= data.byteLength) return;
+          var cmd = String.fromCharCode(getU8(data, ++i));
           if (!esc[cmd]) {
             window.console.log('Unknown escape: ' + cmd);
             log('Unknown escape: ' + cmd);
           } else {
             i = esc[cmd](data, i);
+            if (i < 0) return; // unfinished...
           }
           chars = [];
         } else if (cur == 0x0a) {
@@ -419,6 +438,7 @@ function terminalEmulator(e) {
         i++;
       }
       emitChars(chars);
+      leftover = [];
     }
   };
 };

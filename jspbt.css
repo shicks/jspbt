@@ -1,3 +1,8 @@
+body {
+  background: black;
+  color: gray;
+}
+
 #screen {
   font-family: monospace;
   background: black;
