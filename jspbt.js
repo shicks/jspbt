@@ -33,6 +33,25 @@ var Terminal;
 var Player;   
 
 /**
+ * @typedef {{
+ *   r: number, c: number,       // row/column
+ *   b: boolean, u: boolean, i: boolean, bl: boolean, rev: boolean,
+ *   fg: number, bg: number
+ * }}
+ */
+var TerminalState;
+
+/**
+ * @typedef {{
+ *   r: number, c: number,
+ *   cs: !Array<!Command>,
+ *   lastCommand: (function(): ?Command),
+ * }}
+ */
+var ReverseState;
+
+
+/**
  * Models a TTYREC file.
  * @param {!ArrayBuffer} buffer
  * @return {!TtyRec}
@@ -144,10 +163,174 @@ function player(ttyRec, terminal) {
 }
 
 
+
+// need to get both char AND style...
+function charAt_(el, $) {
+  if (!el) return '';
+  if (!el.children[$.r]) return '';
+  if (!el.children[$.r][$.c]) return '';
+  return el.children[$.r][$.c].textContent;
+}
+
+function clear_(el) {
+  if (!el) {
+    var row = e.children[$.r];
+    if (!row) return;
+    el = row.children[$.c];
+    if (!el) return;
+  }
+  el.textContent = ' ';
+  el.className = '';
+}
+
+
 // TODO(sdh): caching ttyRec wrapper that keeps track of all the \e[2J it sees
 // Provides a "previous frame" function that redraws cleverly...?
 
 // TODO(sdh): something to handle timer/cancelling
+
+/** Represents a command. */
+class Command {
+  /** @param {string} ansi The bytes that represent this command. */
+  constructor(ansi) { this.ansi = ansi; }
+
+  /**
+   * Applies the command to the state and element.
+   * @param {!TerminalState} state
+   * @param {!Element} element
+   * @param {!Object} reverse TODO(sdh): figure out the fields
+   */
+  apply(state, element, reverse) { throw new AbstractMethod(); }
+
+  /**
+   * Parses a command from the data, returning it and updating the
+   * index in the array.
+   * @param {{d: !DataView, i: number}} buffer
+   * @return {?Command}
+   */
+  static parse(buffer) {
+    // TODO(sdh): delegate to other parse methods...
+  }
+}
+
+/** Abstract command prefixed by \e[. */
+Command.BracketPrefix = class extends Command {
+  /**
+   * @param {!Array<number>} numbers
+   * @param {string} suffix
+   */
+  constructor(numbers, suffix) { super('\e[' + numbers.join(';') + suffix); }
+};
+
+/** Abstract base class for all move commands. */
+Command.Move = class extends Command.BracketPrefix {
+  /**
+   * @param {!Array<number>} numbers
+   * @param {string} suffix
+   */
+  constructor(numbers, suffix) { super(numbers, suffix); }
+};
+
+/** Sets an absolute cursor position, \e[<row>;<col>H.  Also f. */
+Command.CursorPosition = class extends Command.Move {
+  /**
+   * @param {number} row
+   * @param {number} col
+   */
+  constructor(row, col) {
+    super([row, col], 'H');
+    this.row = row;
+    this.col = col;
+  }
+
+  /** @override */
+  apply($, _, $$) {
+    // Save the previous state.
+    $$.r = $.r; $$.c = $.c;
+    if ($$.lastCommand() instanceof Command.Move) $$.cs.pop();
+    $$.cs.push(new Command.CursorPosition($.r, $.c));
+
+    // And then actually move the cursor.
+    $.r = Math.max(0, this.row);
+    $.c = Math.max(0, this.col);
+  }
+};
+
+/** Abstract, sets a relative cursor position. */
+Command.MoveRelative = class extends Command.Move {
+  constructor(count, suffix, dr, dc) {
+    super(count != 1 ? [count] : [], suffix);
+    this.count = count;
+    this.dr = dr;
+    this.dc = dc;
+  }
+
+  /** @override */
+  apply($, _, $$) {
+    // Save the previous state.
+    $$.r -= this.dr; $$.c -= this.dc;
+    if ($$.lastCommand() instanceof Command.Move) {
+      $$.cs[$$.cs.length - 1] = new Command.CursorPosition($.r, $.c);
+    } else {
+      $$.cs.push(this.inverse());
+    }
+
+    // Actually move the cursor.
+    $.r = Math.max(0, $.r + this.dr);
+    $.c = Math.max(0, $.c + this.dc);
+  }
+
+  /** @return {!Command.MoveRelative} The inverse command. */
+  inverse() { throw new AbstractMethod(); }
+};
+
+/** Moves the cursor up a specified number of rows. */
+Command.CursorUp = class extends Command.CursorRelative {
+  /** @param {number} count */
+  constructor(count) { super(count, 'A', -count, 0); }
+  /** @override */
+  inverse() { return new Command.CursorDown(this.count); }
+};
+
+/** Moves the cursor down a specified number of rows. */
+Command.CursorDown = class extends Command.CursorRelative {
+  /** @param {number} count */
+  constructor(count) { super(count, 'B', count, 0); }
+  /** @override */
+  inverse() { return new Command.CursorUp(this.count); }
+};
+
+/** Moves the cursor right a specified number of columns. */
+Command.CursorForward = class extends Command.CursorRelative {
+  /** @param {number} count */
+  constructor(count) { super(count, 'C', 0, count); }
+  /** @override */
+  inverse() { return new Command.CursorBackward(this.count); }
+};
+
+/** Moves the cursor left a specified number of columns. */
+Command.CursorBackward = class extends Command.CursorRelative {
+  /** @param {number} count */
+  constructor(count) { super(count, 'D', 0, -count); }
+  /** @override */
+  inverse() { return new Command.CursorForward(this.count); }
+};
+
+/** A backspace: moves the cursor left one column and clears it. */
+Command.Backspace = class extends Command {
+  constructor() { super('\007'); }
+  /** @override */
+  apply($, e, $$) {
+    // Reverse by either printing the deleted character, or else
+    // moving forward if there was nothing to delete.
+    $$.c += 1;
+    
+
+    $.c -= 1;
+    
+  }
+}
+
 
 /**
  * Models the terminal.
@@ -166,10 +349,22 @@ function terminalEmulator(e) {
     bl: false,
     rev: false,
     fg: 7,
-    bg: 0
+    bg: 0,
+  };
+
+  var reverse = {
+    r: 0,
+    c: 0,
+    bits: [],
   };
 
   function move(row, col) {
+    reverse.r = $.r;
+    reverse.c = $.c;
+    if (/^\e\[[0-9;]+H$/.test(reverse.bits[reverse.bits.length - 1])) {
+      reverse.bits.pop();
+    }
+    //reverse.bits.push(
     $.r = Math.max(0, row);
     $.c = Math.max(0, col);
     // TODO(sdh): Update the blinking cursor?
@@ -508,6 +703,12 @@ function log(text) {
   var record = document.createElement('div');
   record.textContent = text;
   document.getElementById('log').appendChild(record);
+}
+
+class AbstractMethod extends Error {
+  constructor() {
+    super('Abstract method');
+  }
 }
 
 })();  // (function() {
