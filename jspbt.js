@@ -267,7 +267,7 @@ function terminalEmulator(e) {
     'f': cursorPosition, // Force Cursor Position
     'J': eraseInDisplay,
     'K': eraseInLine,
-    'm': charAttrs
+    'm': charAttrs,
   };
 
   function bracketEscape(view, i) {
@@ -275,7 +275,7 @@ function terminalEmulator(e) {
     var nums = [];
     var cur = 0;
     while (i < view.byteLength) {
-      if (i + 1 >= view.byteLength) return -1;
+      if (i + 1 >= view.byteLength) return -Infinity;
       var cc = getU8(view, ++i);
       if (cc < 0x30 || cc > 0x3b || cc == 0x3a) { // 3a=:, 3b=;
         break;
@@ -288,8 +288,22 @@ function terminalEmulator(e) {
       }
     }
     if (any) nums.push(cur);
-    if (i >= view.byteLength) return -1;
+    if (i >= view.byteLength) return -Infinity;
     var cmd = String.fromCharCode(getU8(view, i));
+    if (cmd == '?') {
+      var j = i + 1;
+      var msg = '\\e[?';
+      while (j < view.byteLength) {
+        var c = getU8(view, j++);
+        msg += String.fromCharCode(c);
+        if (c > 0x40) {
+          window.console.log(msg);
+          return j;
+        }
+      }
+      window.console.log('Unexpected EOF after \\e[?');
+      return i;
+    }
     if (!brk[cmd]) {
       window.console.log('Unknown bracket escape: ' + cmd);
       log('Unknown bracket escape: ' + cmd);
@@ -414,7 +428,10 @@ function terminalEmulator(e) {
             log('Unknown escape: ' + cmd);
           } else {
             i = esc[cmd](data, i);
-            if (i < 0) return; // unfinished...
+            if (i < -leftover.length) return; // unfinished...
+            else if (i < 0) {
+              leftover.splice(-i, i + leftover.length);
+            }
           }
           chars = [];
         } else if (cur == 0x0a) {
@@ -480,7 +497,7 @@ document.getElementById('fetch').addEventListener('click', readLocalFiles);
 // TODO(sdh): currently broken due to XSS protections - need a relay
 function fetchUrl(url) {
   var xhr = new XMLHttpRequest();
-  xhr.open('get', url);
+  xhr.open('get', 'http://cors.io/?u=' + url);
   xhr.responseType = 'arraybuffer';
   xhr.onreadystatechange = function() {
     if (xhr.readyState != 4) return;
@@ -528,6 +545,11 @@ function log(text) {
   var record = document.createElement('div');
   record.textContent = text;
   document.getElementById('log').appendChild(record);
+}
+
+var url = /\?url=(.*)/.exec(window.location.search);
+if (url) {
+  fetchUrl(url[1]);
 }
 
 })();  // (function() {
