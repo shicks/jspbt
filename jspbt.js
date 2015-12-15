@@ -1,3 +1,7 @@
+import Command from './command';
+import State from './state';
+import Reader from './reader';
+
 (function() {
 
 // TODO(sdh): bz2 support: https://github.com/antimatter15/bzip2.js
@@ -424,13 +428,15 @@ function terminalEmulator(e) {
           if (i + 1 >= data.byteLength) return;
           var cmd = String.fromCharCode(getU8(data, ++i));
           if (!esc[cmd]) {
-            window.console.log('Unknown escape: ' + cmd);
+            window.console.log('Unknown escape: ' + cmd +
+                               ' (0x' + getU8(data, i).toString(16) + ')');
             log('Unknown escape: ' + cmd);
           } else {
             i = esc[cmd](data, i);
             if (i < -leftover.length) return; // unfinished...
             else if (i < 0) {
               leftover.splice(-i, i + leftover.length);
+              i--;
             }
           }
           chars = [];
