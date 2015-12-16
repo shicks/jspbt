@@ -1,3 +1,4 @@
+'use strict';
 
 /**
  * Stores the state of the cursor, with bounds checking
@@ -97,14 +98,14 @@ export default class State {
     if (this.element_) {
       const rowElem = sliceChildren(this.element_, row, 1);
       const cells = sliceChildren(rowElem, col, out.length / 2, 'div');
-      for (const i = 0; i < chars.length; i++) {
+      for (let i = 0; i < chars.length; i++) {
         setCell(cells[i], rowData[2 * i], rowData[2 * i + 1]);
       }
     }
     return out;
   }
 
-  save(/** ?Array<number> */ state = null) {
+  save(/** ?Array<number>= */ state = null) {
     if (!state) state = [this.row_, this.column_, this.flags_];
     this.stack_.push(...state);
   }

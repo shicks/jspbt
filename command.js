@@ -44,7 +44,7 @@ export default class Command {
           console.log('Bad escape: 0x1b 0x' + esc.toString(16));
           reader.backtrack();
           reader.next(); // ignore the escape so that we can make progress
-          return new UnknownCommand('\x1b', '\\e\\x' + esc.toString(16);
+          return new UnknownCommand('\x1b', '\\e\\x' + esc.toString(16));
         }
       } else if (c == 0x0a) {
         return new LineFeed();
@@ -145,6 +145,8 @@ class BracketPrefix extends Command {
           nums[0] == 1 ? new EraseInLineStart() : new EraseInLineEnd();
     } else if (cmd == 'm') {
       return new CharAttrs(nums);
+    } else {
+      return new UnknownCommand('\e[' + nums.join(';') + cmd, 'unknown');
     }
   }
 }
