@@ -195,8 +195,10 @@ function terminalEmulator(e) {
     write: function(data) {
       //hexDump(data); // Log the packet
       reader.add(data);
+      console.log("---------------------New Frame---------------------");
       let command = Command.parse(reader);
       while (command != null) {
+        console.log(String(command));
         command.apply(state);
         command = Command.parse(reader);
       }

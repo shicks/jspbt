@@ -71,7 +71,9 @@ class IgnoredCommand extends Command {
   get ansi() { return this.ansi_; }
   apply(s) {}
   undo(s) {}
-  static parse(/** !Reader */ reader) { return null; }
+  toString() {
+    return 'IgnoredCommand{' + this.ansi_.replace('\x1b', '\\e') + '}';
+  }
 }
 
 
@@ -80,6 +82,7 @@ class UnknownCommand extends IgnoredCommand {
     super(ansi);
     console.log(message);
   }
+  toString() { return super.toString().replace('Ignored', 'Unknown'); }
 }
 
 
@@ -99,6 +102,7 @@ class Characters extends Command {
     s.c -= this.chars_.length;
     s.write(this.undo_, s.r, s.c);
   }    
+  toString() { return 'Characters{' + this.chars_ + '}'; }
 }
 
 
@@ -180,6 +184,8 @@ class CursorPosition extends BracketPrefix {
     s.r = this.undo_[0];
     s.c = this.undo_[1];
   }
+
+  toString() { return 'CursorPosition{' + this.r_ + ', ' + this.c_ + '}'; }
 }
 
 class LineFeed extends Command {
@@ -187,6 +193,7 @@ class LineFeed extends Command {
   get ansi() { return '\n'; } // 0x0a
   apply(s) { s.r++; }
   undo(s) { s.r--; }
+  toString() { return 'LineFeed'; }
 }
 
 class CarriageReturn extends Command {
@@ -194,6 +201,7 @@ class CarriageReturn extends Command {
   get ansi() { return '\r'; } // 0x0d
   apply(s) { this.undo_ = s.c; s.c = 0; }
   undo(s) { s.c = this.undo_; }
+  toString() { return 'CarriageReturn'; }
 }
 
 class Backspace extends Command {
@@ -201,6 +209,7 @@ class Backspace extends Command {
   get ansi() { return '\x08'; }
   apply(s) { s.c--; }
   undo(s) { s.c++; }
+  toString() { return 'Backspace'; }
 }
 
 class CursorRelative extends BracketPrefix {
@@ -208,6 +217,7 @@ class CursorRelative extends BracketPrefix {
     super();
     this.count_ = u16(count);
   }
+  get count() { return this.count_; }
   params() { return this.count_ != 1 ? [this.count_] : []; }
   apply(s) { this.applyInternal(s, this.count_); }
   undo(s) { this.applyInternal(s, -this.count_); }
@@ -222,24 +232,28 @@ class CursorUp extends CursorRelative {
   constructor(/** number */ count) { super(count); }
   suffix() { return 'A'; }
   applyInternal(s, count) { s.r -= count; }
+  toString() { return 'CursorUp{' + this.count + '}'; }
 }
 
 class CursorDown extends CursorRelative {
   constructor(/** number */ count) { super(count); }
   suffix() { return 'B'; }
   applyInternal(s, count) { s.r += count; }
+  toString() { return 'CursorDown{' + this.count + '}'; }
 }
 
 class CursorBackward extends CursorRelative {
   constructor(/** number */ count) { super(count); }
   suffix() { return 'C'; }
   applyInternal(s, count) { s.c -= count; }
+  toString() { return 'CursorBackward{' + this.count + '}'; }
 }
 
 class CursorForward extends CursorRelative {
   constructor(/** number */ count) { super(count); }
   suffix() { return 'D'; }
   applyInternal(s, count) { s.c += count; }
+  toString() { return 'CursorForward{' + this.count + '}'; }
 }
 
 
@@ -252,7 +266,7 @@ class CharAttrs extends BracketPrefix {
     function color(type, color) {
       if (type == State.BG) color <<= 3;
       set |= color;
-      clear &= type;
+      clear &= ~type;
     }
     for (let i = 0; i < args.length; i++) {
       const c = this.args_[i];
@@ -262,7 +276,7 @@ class CharAttrs extends BracketPrefix {
       else if (c == 5) set |= State.BLINK;
       else if (c == 7) set |= State.REVERSE;
       else if (c >= 30 && c <= 37) color(State.FG, c - 30);
-      else if (c >= 40 && c <= 47) color(State.BG, c - 30);
+      else if (c >= 40 && c <= 47) color(State.BG, c - 40);
       else if (c == 38 && this.args_[i + 1] == 5) color(State.FG, this.args_[i += 2]);
       else if (c == 48 && this.args_[i + 1] == 5) color(State.BG, this.args_[i += 2]);
       // TODO(sdh): else log unknown CharAttr: `\\e[${c}m`
@@ -278,6 +292,7 @@ class CharAttrs extends BracketPrefix {
     s.flags = (s.flags & this.mask_) | (this.mask_ >>> 16);
   }
   undo(s) { s.flags = this.undo_; }
+  toString() { return 'CharsAttr{' + this.args_.join(';') + ' => 0x' + this.mask_.toString(16) + '}'; }
 }
 
 
@@ -286,6 +301,7 @@ class SaveCursor extends Command {
   get ansi() { return '\x1b7'; }
   apply(s) { s.save(); }
   undo(s) { s.restore(); } // TODO(sdh): or just pop?
+  toString() { return 'SaveCursor'; }
 }
 
 
@@ -298,6 +314,7 @@ class RestoreCursor extends Command {
   get ansi() { return '\x1b8'; }
   apply(s) { this.undo_ = s.restore(); }
   undo(s) { s.save(this.undo_); }
+  toString() { return 'RestoreCursor'; }
 }
 
 
@@ -315,6 +332,7 @@ class Delete extends Command {
   undo(s) {
     s.write(this.undo_);
   }
+  toString() { return 'Delete'; }
 }
 
 
@@ -341,6 +359,7 @@ class EraseDisplayFull extends EraseDisplay {
     }
   }
   get keyframe() { return true; }
+  toString() { return 'EraseDisplayFull'; }
 }
 
 
@@ -357,6 +376,7 @@ class EraseDisplayStart extends EraseDisplay {
       s.write(this.erased[r], r, 0);
     }
   }
+  toString() { return 'EraseDisplayStart'; }
 }
 
 
@@ -374,6 +394,7 @@ class EraseDisplayEnd extends EraseDisplay {
       s.write(this.erased[i], s.r + i, i ? 0 : s.c);
     }
   }
+  toString() { return 'EraseDisplayEnd'; }
 }
 
 
@@ -395,6 +416,7 @@ class EraseInLineFull extends EraseInLine {
     s.clear(s.r);
     s.write(this.erased, s.r, 0);
   }
+  toString() { return 'EraseInLineFull'; }
 }
 
 
@@ -403,17 +425,21 @@ class EraseInLineStart extends EraseInLine {
   params() { return [1]; }
   apply(s) { this.erased = s.clear(s.r, [0, s.c])[0]; }
   undo(s) { s.write(this.erased, s.r, 0); }
+  toString() { return 'EraseInLineStart'; }
 }
 
 
 class EraseInLineEnd extends EraseInLine {
   constructor() { super(); }
   params() { return [0]; }
-  apply(s) { this.erased = s.clear(s.r, [s.c])[0]; }
+  apply(s) {
+    this.erased = s.clear(s.r, [s.c])[0];
+  }
   undo(s) {
     s.clear(s.r, [s.c]);
     s.write(this.erased, s.r, s.c);
   }
+  toString() { return 'EraseInLineEnd'; }
 }
 
 

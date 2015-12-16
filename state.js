@@ -56,7 +56,7 @@ export default class State {
       cols = [cols, cols + 1];
     }
 
-    if (cols.length == 1) cols = [cols[0], this.data_.length];
+    if (cols.length == 1) cols = [cols[0], row.length / 2];
     if (cols[1] <= cols[0]) return [];
     const ncols = cols[1] - cols[0];
     const cleared = [];
@@ -87,8 +87,8 @@ export default class State {
     }
     const rowData = getOrEmpty(this.data_, row);
     let out;
+    if (rowData.length < 2 * col) rowData.length = 2 * col;
     if (chars instanceof Array) {
-      if (rowData.length < 2 * col) rowData.length = 2 * col;
       out = rowData.splice(2 * col, chars.length, ...chars);
       out.length = chars.length;
     } else {
@@ -102,8 +102,8 @@ export default class State {
     if (this.element_) {
       const rowElem = sliceChildren(this.element_, row, row + 1, 'div')[0];
       const cells = sliceChildren(rowElem, col, col + out.length / 2, 'span');
-      for (let i = 0; i < chars.length; i++) {
-        setCell(cells[i], rowData[2 * i], rowData[2 * i + 1]);
+      for (let i = col; i < col + chars.length; i++) {
+        setCell(cells[i - col], rowData[2 * i], rowData[2 * i + 1]);
       }
     }
     return out;
@@ -149,7 +149,7 @@ export default class State {
   }
   /** @param {number} row */
   set r(row) {
-    this.row_ = Math.max(0, row);
+    this.row_ = Math.max(1, row);
   }
 
   /** @return {number} Column index. */
@@ -158,7 +158,7 @@ export default class State {
   }
   /** @param {number} column */
   set c(column) {
-    this.column_ = Math.max(0, column);
+    this.column_ = Math.max(1, column);
   }
 
   /** @return {number} All flags. */
