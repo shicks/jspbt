@@ -162,7 +162,7 @@ function terminalEmulator(e) {
 
   var state = new State();
   state.attach(e);
-  var redaer = new Reader();
+  var reader = new Reader();
 
   function hexDump(data) {
     for (var j = 0; j < data.byteLength; j += 16) {

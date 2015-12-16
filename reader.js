@@ -30,7 +30,7 @@ export default class Reader {
 
   /** @return {string} The next char, or empty if at EOF. */
   nextChar() {
-    const cp = nextCodepoint;
+    const cp = this.nextCodepoint();
     return cp < 0 ? '' : String.fromCodePoint(cp);
   }
 
@@ -99,11 +99,10 @@ export default class Reader {
 
   /** @return {boolean} */
   eof() {
-    return currentView_() != null;
+    return this.currentView_() != null;
   }
 
-  /** @param {!DataView} */ 
-  add(view) {
+  add(/** !DataView */ view) {
     this.views_.push(view);
   }
 

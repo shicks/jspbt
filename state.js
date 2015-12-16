@@ -10,7 +10,7 @@ export default class State {
    * @param {number=} column
    * @param {number=} flags
    */
-  constructor(row = 0, column = 0, flags = 0) {
+  constructor(row = 0, column = 0, flags = FG) {
     /** @private {number} Row index */
     this.row_ = row;
     /** @private {number} Column index */
@@ -35,13 +35,15 @@ export default class State {
     if (rows instanceof Array) {
       if (cols != null) throw new Error('cols is ignored if rows is array.');
       if (rows.length == 1) rows = [rows[0], this.data_.length];
+      if (rows[1] <= rows[0]) return [];
       const nrows = rows[1] - rows[0];
       const cleared = []; cleared.length = nrows;
+      for (let i = 0; i < nrows; i++) cleared[i] = [];
       while (this.data_.length < rows[0]) this.data_.push([]);
       const out = this.data_.splice(rows[0], nrows, ...cleared);
       while (out.size < nrows) out.push([]);
       if (this.element_) {
-        for (let row of sliceChildren(this.element_, rows[0], nrows, 'div')) {
+        for (let row of sliceChildren(this.element_, rows[0], rows[1], 'div')) {
           resize(row, 0, 'span');
         }
       }
@@ -55,19 +57,21 @@ export default class State {
     }
 
     if (cols.length == 1) cols = [cols[0], this.data_.length];
+    if (cols[1] <= cols[0]) return [];
     const ncols = cols[1] - cols[0];
     const cleared = [];
     if (row.length > 2 * cols[1]) cleared.length = 2 * ncols;
     const out = row.splice(2 * cols[0], 2 * ncols, ...cleared);
     out.size = 2 * ncols;
     if (this.element_) {
-      const rowElem = sliceChildren(this.element_, row, 1, 'div');
-      for (let cell of sliceChildren(rowElem, cols[0], ncols, 'span')) {
+      const rowElem =
+          sliceChildren(this.element_, rows, rows + 1, 'div')[0];
+      for (let cell of sliceChildren(rowElem, cols[0], cols[1], 'span')) {
         cell.className = '';
         cell.textContent = ' ';
       }
     }
-    return out;
+    return [out];
   }
 
   /**
@@ -88,7 +92,7 @@ export default class State {
       out = rowData.splice(2 * col, chars.length, ...chars);
       out.length = chars.length;
     } else {
-      out = rowData.slice(2 * col, 2 * chars.length);
+      out = rowData.slice(2 * col, 2 * (col + chars.length));
       out.length = 2 * chars.length; // just in case it's too small
       for (let i = 0; i < chars.length; i++) {
         rowData[2 * (col + i)] = chars[i];
@@ -96,8 +100,8 @@ export default class State {
       }
     }
     if (this.element_) {
-      const rowElem = sliceChildren(this.element_, row, 1);
-      const cells = sliceChildren(rowElem, col, out.length / 2, 'div');
+      const rowElem = sliceChildren(this.element_, row, row + 1, 'div')[0];
+      const cells = sliceChildren(rowElem, col, col + out.length / 2, 'span');
       for (let i = 0; i < chars.length; i++) {
         setCell(cells[i], rowData[2 * i], rowData[2 * i + 1]);
       }
@@ -239,6 +243,14 @@ const UNDERLINE = 256;
 const BLINK = 512;
 const REVERSE = 1024;
 
+State.FG = FG;
+State.BG = BG;
+State.BOLD = BOLD;
+State.ITALIC = ITALIC;
+State.UNDERLINE = UNDERLINE;
+State.BLINK = BLINK;
+State.REVERSE = REVERSE;
+
 
 /** @return {!IArrayLike<!Element>} */
 function resize(/** !Element */ elem, /** number */ len, /** string */ tag) {
@@ -251,24 +263,29 @@ function resize(/** !Element */ elem, /** number */ len, /** string */ tag) {
   return elem.children;
 }
 
-/** @return {!IArrayLike<!Element>} */
+/** @return {!Array<!Element>} */
 function sliceChildren(/** !Element */ elem,
-    /** number */ start, /** number */ count, /** string */ tag) {
-  while (elem.children.length < start + count) {
+    /** number */ start, /** number */ end, /** string */ tag) {
+  while (elem.children.length < end) {
     elem.appendChild(document.createElement(tag));
   }
-  return [].slice.call(elem.children, start, count);
+  return [].slice.call(elem.children, start, end);
 }
 
-/** @return {!Array<string|number|undefined>} */
-function getOrEmpty(/** !Array<T> */ arr, /** number */ index) {
+/**
+ * @return {!Array<T>}
+ * @template T
+ */
+function getOrEmpty(/** !Array<!Array<T>> */ arr, /** number */ index) {
   while (arr.length <= index) arr.push([]);
   return arr[index];
 }
 
-function setCell(/** !Element */ elem, /** string */ txt, /** number */ flags) {
-  if (txt.length > 1) txt = txt.substring(0, 1);
-  elem.textContent = txt || ' ';
+function setCell(/** !Element */ elem,
+    /** string|number|undefined */ txt, /** string|number|undefined */ flags) {
+  if (txt && txt.length > 1) txt = txt.substring(0, 1);
+  elem.textContent = txt ? String(txt) : ' ';
+  flags = flags ? Number(flags) : 0;
   elem.className = '';
   if (flags & BOLD) elem.classList.add('b');
   if (flags & ITALIC) elem.classList.add('i');

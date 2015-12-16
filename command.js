@@ -1,25 +1,24 @@
 
-export default class Command {
-  constructor() {}
+import State from 'state';
+import Reader from 'reader';
 
+export default class Command {
   /** @return {string} */
   get ansi() { throw new AbstractMethod(); }
 
-  /** @param {!State} */
-  apply(state) { throw new AbstractMethod(); }
+  apply(/** !State */ state) { throw new AbstractMethod(); }
 
   // NOTE: commands store their own undo information, and undo is only
   // guaranteed to work *after* a command has been successfully applied
   // at least once.
 
-  /** @param {!State} */
-  undo(state) { throw new AbstractMethod(); }
+  undo(/** !State */ state) { throw new AbstractMethod(); }
 
   /** @return {boolean} */
   get keyframe() { return false; }
 
   /** @return {?Command} */
-  static parse(reader) {
+  static parse(/** !Reader */ reader) {
     const chars = [];
     for (;;) {
       reader.save();
@@ -28,7 +27,7 @@ export default class Command {
         chars.push(String.fromCharCode(c));
       } else if (c < 0 || chars.length) { // incomplete unicode
         reader.backtrack();
-        return chars.length ? new Characters[chars.join('')] : null;
+        return chars.length ? new Characters(chars.join('')) : null;
       } else if (c == 0x1b) { // esc
         const esc = reader.nextCodepoint();
         if (esc == 0x5b) { // '['
@@ -54,7 +53,7 @@ export default class Command {
         return new Backspace();
       } else {
         // TODO(sdh): 0x7f -> Delete?
-        console.log('Unknown non-printing char: ' + cur + ' at ' + i);
+        console.log('Unknown non-printing char: ' + c);
         return new UnknownCommand(
             String.fromCharCode(c), '\\x' + c.toString(16));
       }
@@ -63,15 +62,24 @@ export default class Command {
 }
 
 
-class UnknownCommand extends Command {
-  constructor(/** string */ ansi, /** string */ message) {
+
+class IgnoredCommand extends Command {
+  constructor(/** string */ ansi) {
     super();
     this.ansi_ = ansi;
-    console.log(message);
   }
   get ansi() { return this.ansi_; }
   apply(s) {}
   undo(s) {}
+  static parse(/** !Reader */ reader) { return null; }
+}
+
+
+class UnknownCommand extends IgnoredCommand {
+  constructor(/** string */ ansi, /** string */ message) {
+    super(ansi);
+    console.log(message);
+  }
 }
 
 
@@ -95,8 +103,6 @@ class Characters extends Command {
 
 
 class BracketPrefix extends Command {
-  constructor() { super(); }
-
   /** @override */
   get ansi() {
     // TODO(sdh): consider normalizing all params to u16?
@@ -203,8 +209,8 @@ class CursorRelative extends BracketPrefix {
     this.count_ = u16(count);
   }
   params() { return this.count_ != 1 ? [this.count_] : []; }
-  apply(s) { applyInternal(s, this.count_); }
-  undo(s) { applyInternal(s, -this.count_); }
+  apply(s) { this.applyInternal(s, this.count_); }
+  undo(s) { this.applyInternal(s, -this.count_); }
 
   /** @protected */
   applyInternal(/** !State */ s, /** number */ count) {
@@ -244,32 +250,32 @@ class CharAttrs extends BracketPrefix {
     let set = 0;
     let clear = 0xffff;
     function color(type, color) {
-      if (type == BG) color <<= 3;
+      if (type == State.BG) color <<= 3;
       set |= color;
       clear &= type;
     }
     for (let i = 0; i < args.length; i++) {
       const c = this.args_[i];
-      if (c == 1) set |= BOLD;
-      else if (c == 3) set |= ITALIC;
-      else if (c == 4) set |= UNDERLINE;
-      else if (c == 5) set |= BLINK;
-      else if (c == 7) set |= REVERSE;
-      else if (c >= 30 && c <= 37) color(FG, c - 30);
-      else if (c >= 40 && c <= 47) color(BG, c - 30);
-      else if (c == 38 && this.args_[i + 1] == 5) color(FG, this.args_[i += 2]);
-      else if (c == 48 && this.args_[i + 1] == 5) color(BG, this.args_[i += 2]);
+      if (c == 1) set |= State.BOLD;
+      else if (c == 3) set |= State.ITALIC;
+      else if (c == 4) set |= State.UNDERLINE;
+      else if (c == 5) set |= State.BLINK;
+      else if (c == 7) set |= State.REVERSE;
+      else if (c >= 30 && c <= 37) color(State.FG, c - 30);
+      else if (c >= 40 && c <= 47) color(State.BG, c - 30);
+      else if (c == 38 && this.args_[i + 1] == 5) color(State.FG, this.args_[i += 2]);
+      else if (c == 48 && this.args_[i + 1] == 5) color(State.BG, this.args_[i += 2]);
       // TODO(sdh): else log unknown CharAttr: `\\e[${c}m`
     }
     /** @private @const {number} OR in the high 16 bits, AND in the low 16. */
-    this.mask_ = set ? set << 16 | clear : 0;
+    this.mask_ = set ? set << 16 | clear : State.FG << 16;
     /** @private {number} */
     this.undo_ = 0;
   }
   params() { return this.args_; }
   apply(s) {
     this.undo_ = s.flags;
-    s.flags = (s.flags & clear) | set;
+    s.flags = (s.flags & this.mask_) | (this.mask_ >>> 16);
   }
   undo(s) { s.flags = this.undo_; }
 }
@@ -299,7 +305,7 @@ class Delete extends Command {
   constructor() {
     super();
     /** @private {!Array<string|number>} */
-    this.undo_ = null;
+    this.undo_ = [];
   }
   get ansi() { return '\x7f'; }
   apply(s) {
@@ -312,11 +318,11 @@ class Delete extends Command {
 }
 
 
-class EraseDisplay extends BracketEscape {
+class EraseDisplay extends BracketPrefix {
   constructor() {
     super();
-    /** @private {!Array<!Array<string|number>>} */
-    this.undo_ = null;
+    /** @protected {!Array<!Array<string|number>>} */
+    this.erased = [];
   }
   suffix() { return 'J'; }
 }
@@ -326,12 +332,12 @@ class EraseDisplayFull extends EraseDisplay {
   constructor() { super(); }
   params() { return [2]; }
   apply(s) {
-    this.undo_ = s.clear();
+    this.erased = s.clear();
   }
   undo(s) {
     s.clear();
-    for (let r = 0; r < this.undo_.length; r++) {
-      s.write(this.undo_[r], r, 0);
+    for (let r = 0; r < this.erased.length; r++) {
+      s.write(this.erased[r], r, 0);
     }
   }
   get keyframe() { return true; }
@@ -342,13 +348,13 @@ class EraseDisplayStart extends EraseDisplay {
   constructor() { super(); }
   params() { return [1]; }
   apply(s) {
-    this.undo_ = s.clear([0, s.r]);
-    this.undo_.push(s.clear(s.r, [0, s.c]));
+    this.erased = s.clear([0, s.r]);
+    this.erased.push(s.clear(s.r, [0, s.c])[0]);
   }
   undo(s) {
     s.clear([0, s.r])
-    for (let r = 0; r < this.undo_.length; r++) {
-      s.write(this.undo_[r], r, 0);
+    for (let r = 0; r < this.erased.length; r++) {
+      s.write(this.erased[r], r, 0);
     }
   }
 }
@@ -358,24 +364,24 @@ class EraseDisplayEnd extends EraseDisplay {
   constructor() { super(); }
   params() { return [0]; }
   apply(s) {
-    this.undo_ = [s.clear(s.r, [s.c])]
-    this.undo_.push(...s.clear([s.r]));
+    this.erased = s.clear(s.r, [s.c])
+    this.erased.push(...s.clear([s.r]));
   }
   undo(s) {
     s.clear([s.r + 1]);
     s.clear(s.r, [s.c]);
-    for (let i = 0; i < this.undo_.length; i++) {
-      s.write(this.undo_[i], s.r + i, i ? 0 : s.c);
+    for (let i = 0; i < this.erased.length; i++) {
+      s.write(this.erased[i], s.r + i, i ? 0 : s.c);
     }
   }
 }
 
 
-class EraseInLine extends BracketEscape {
+class EraseInLine extends BracketPrefix {
   constructor() {
     super();
-    /** @private {!Array<string|number>} */
-    this.undo_ = null;
+    /** @protected {!Array<string|number>} */
+    this.erased = [];
   }
   suffix() { return 'K'; }
 }
@@ -384,10 +390,10 @@ class EraseInLine extends BracketEscape {
 class EraseInLineFull extends EraseInLine {
   constructor() { super(); }
   params() { return [2]; }
-  apply(s) { this.undo_ = s.clear(s.r); }
+  apply(s) { this.erased = s.clear(s.r)[0]; }
   undo(s) {
     s.clear(s.r);
-    s.write(this.undo_, s.r, 0);
+    s.write(this.erased, s.r, 0);
   }
 }
 
@@ -395,18 +401,18 @@ class EraseInLineFull extends EraseInLine {
 class EraseInLineStart extends EraseInLine {
   constructor() { super(); }
   params() { return [1]; }
-  apply(s) { this.undo_ = s.clear(s.r, [0, s.c]); }
-  undo(s) { s.write(this.undo_, s.r, 0); }
+  apply(s) { this.erased = s.clear(s.r, [0, s.c])[0]; }
+  undo(s) { s.write(this.erased, s.r, 0); }
 }
 
 
 class EraseInLineEnd extends EraseInLine {
   constructor() { super(); }
   params() { return [0]; }
-  apply(s) { this.undo_ = s.clear(s.r, [s.c]); }
+  apply(s) { this.erased = s.clear(s.r, [s.c])[0]; }
   undo(s) {
     s.clear(s.r, [s.c]);
-    s.write(this.undo_, s.r, s.c);
+    s.write(this.erased, s.r, s.c);
   }
 }
 
@@ -417,4 +423,10 @@ function u16(/** number */ x) {
   if (x < 0) return 0;
   if (x > 65535) return 65535;
   return x;
+}
+
+class AbstractMethod extends Error {
+  constructor(/** string= */ message = 'Method is abstract') {
+    super(message);
+  }
 }
