@@ -173,13 +173,13 @@ export default class State {
     this.element_ = null;
   }
 
-  attach(e) {
+  attach(/** !Element */ e) {
     this.element_ = e;
-    const rowElems = resize(e, this.data_.length, 'div');
+    const rowElems = resize(this.element_, this.data_.length, 'div');
     for (let r = 0; r < this.data_.length; r++) {
       const rowElem = rowElems[r];
       const rowData = this.data_[r];
-      const cells = resize(e, rowData.length / 2, 'span');
+      const cells = resize(rowElem, rowData.length / 2, 'span');
       for (let c = 0; c < cells.length; c++) {
         setCell(cells[c], rowData[2 * c], rowData[2 * c + 1]);
       }      

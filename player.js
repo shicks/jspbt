@@ -32,7 +32,9 @@ var Terminal;
  *   speed: function(): number,  // returns the speed
  *   setSpeed: function(number),
  *   advance: function(number),  // advances a number of frames
- *   onframe: function()         // called on each frame
+ *   onframe: function(),         // called on each frame
+ *   detach: function(),
+ *   attach: function(),
  * }}
  */
 var Player;   
@@ -123,6 +125,7 @@ function player(ttyRec, terminal) {
       var delay = transform(ttyRec.delayMs());
       nextFrameMs = +new Date() + delay;
       timeout = setTimeout(advance, delay);
+      // TODO(sdh): auto-pause once we hit the end
     }
   }
 
@@ -137,6 +140,8 @@ function player(ttyRec, terminal) {
         // TODO(sdh): set waitedMs
       }
     },
+    detach() {terminal.detach();},
+    attach() {terminal.attach();},
     advance: advance,
     speed: function() { return speed; },
     setSpeed: function(newSpeed) {
@@ -193,6 +198,9 @@ function terminalEmulator(e) {
   }
 
   return {
+    attach() { state.attach(e); },
+    detach() { state.detach(); },
+
     write: function(/** !Array<!Command> */ cmds) {
       //hexDump(data); // Log the packet
       console.log("---------------------New Frame---------------------");
@@ -282,6 +290,25 @@ function loadTtyRec(buf) {
   });
   document.getElementById('prev').addEventListener('click', function() {
     p.advance(-1);
+  });
+  document.getElementById('next100').addEventListener('click', function() {
+    // TODO(sdh): if frames are already loaded, then look for a keyframe?
+    // TODO(sdh): add a "loaded" flag to Frame?
+
+    // TODO(sdh): jumping can be very slow and interrupts the UI thread
+    // significantly.  consider (1) preloading in the background,
+    // (2) making jumps async - sort of a (target state is ...),
+    // (3) use frame data to trade-off whether to detach or not
+    // i.e. # of commands since a keyframe
+
+    p.detach();
+    p.advance(100);
+    p.attach();
+  });
+  document.getElementById('prev100').addEventListener('click', function() {
+    p.detach();
+    p.advance(-100);
+    p.attach();
   });
   var playButton = document.getElementById('play');
   playButton.addEventListener('click', function() {
