@@ -1,6 +1,7 @@
 import Command from './command';
-import State from './state';
+import Frame from './frame';
 import Reader from './reader';
+import State from './state';
 
 (function() {
 
@@ -8,7 +9,7 @@ import Reader from './reader';
 
 /**
  * @typedef {{
- *   data: function(): DataView,
+ *   commands: function(): !Array<Command>,
  *   time: function(): Date,
  *   delayMs: function(): number,
  *   frame: function(): number,
@@ -38,51 +39,45 @@ var Player;
 
 /**
  * Models a TTYREC file.
- * @param {!ArrayBuffer} buffer
+ * @param {!ArrayBuffer} buf
  * @return {!TtyRec}
  */
-function ttyRec(arrayBuffer) {
-  var view = new DataView(arrayBuffer);
-  var pos = 0;
+function ttyRec(buf) {
+  var frames = [];
   var frame = 0;
-  var framePositions = [0];
 
-  function len(start) {
-    if (start >= arrayBuffer.byteLength) return 0;
-    return view.getUint32(start + 8, true);
-  }
+  var iter = Frame.parse(buf);
 
-  function timeMs(start) {
-    if (start >= arrayBuffer.byteLength) return 0;
-    return view.getUint32(start, true) * 1000 +
-        view.getUint32(start + 4, true) / 1000;
+  function load() {
+    while (frame >= frames.length) {
+      var val = iter.next();
+      if (val.done) {
+        frame = frames.length;
+        return false;
+      }
+      frames.push(val.value);
+    }
+    return true;
   }
 
   return {
-    data: function() {
-      if (pos >= arrayBuffer.byteLength) return new DataView(arrayBuffer, 0, 0);
-      return new DataView(arrayBuffer, pos + 12, len(pos));
+    commands: function() {
+      return load() ? frames[frame].commands : [];
     },
     time: function() {
-      return new Date(timeMs(pos));
+      return new Date(frames[frame - !load()].startMs);
     },
     delayMs: function() {
-      var next = pos + 12 + len(pos);
-      if (next >= view.byteLength) return 0;
-      return Math.max(0, timeMs(next) - timeMs(pos));
+      return load() ? frames[frame].durationMs : Infinity;
     },
     frame: function() {
       return frame;
     },
-    setFrame: function(frame) {
-      while (frame >= framePositions.length) {
-        var last = framePositions[framePositions.length - 1];
-        framePositions.push(last + 12 + len(last));
-      }
-      pos = framePositions[frame];
+    setFrame: function(newFrame) {
+      frame = newFrame;
     },
     advance: function() {
-      pos = pos + 12 + len(pos);
+      frame++;
     }
   };
 }
@@ -112,10 +107,17 @@ function player(ttyRec, terminal) {
     if (frames == null) frames = 1;
     if (timeout) clearTimeout(timeout);
     timeout = null;
-    if (frames < 0) return; // TODO(sdh): support backtracking
+    while (frames < 0 && ttyRec.frame() > 0) {
+      terminal.reverse(ttyRec.commands());
+      ttyRec.setFrame(ttyRec.frame() - 1);
+      frames++;
+    }
+    while (frames > 0) {
+      ttyRec.advance();
+      terminal.write(ttyRec.commands());
+      frames--;
+    }
     player.onframe();
-    while (frames--) ttyRec.advance();
-    terminal.write(ttyRec.data());
     waitedMs = 0;
     if (playing) {
       var delay = transform(ttyRec.delayMs());
@@ -191,18 +193,20 @@ function terminalEmulator(e) {
   }
 
   return {
-    /** @param {DataView} data */
-    write: function(data) {
+    write: function(/** !Array<!Command> */ cmds) {
       //hexDump(data); // Log the packet
-      reader.add(data);
       console.log("---------------------New Frame---------------------");
-      let command = Command.parse(reader);
-      while (command != null) {
-        console.log(String(command));
-        command.apply(state);
-        command = Command.parse(reader);
+      for (let cmd of cmds) {
+        console.log(String(cmd));
+        cmd.apply(state);
       }
-    }
+    },
+
+    reverse: function(/** !Array<!Command> */ cmds) {
+      for (let i = cmds.length - 1; i >= 0; i--) {
+        cmds[i].undo(state);
+      }
+    },
   };
 };
 
@@ -255,24 +259,29 @@ function fetchUrl(url) {
 function advanceFrame(file, terminal) {
   document.getElementById('log').innerHTML = '';
   file.advance();
-  document.getElementById('time').textContent = file.time() + '';
-  terminal.write(file.data());
+  document.getElementById('time').textContent =
+      file.frame() + ': ' + file.time();
+  terminal.write(file.commands());
 }
 
 function loadTtyRec(buf) {
   var terminal = terminalEmulator(document.getElementById('screen'));
   var file = ttyRec(buf);
-  terminal.write(file.data());
+  terminal.write(file.commands());
 
   var p = player(file, terminal);
   p.onframe = function() {
-    document.getElementById('time').textContent = file.time() + '';
+    document.getElementById('time').textContent =
+        file.frame() + ': ' + file.time();
   };
 
   document.getElementById('loadForm').style.display = 'none';
   document.getElementById('playForm').style.display = 'block';
   document.getElementById('next').addEventListener('click', function() {
     p.advance();
+  });
+  document.getElementById('prev').addEventListener('click', function() {
+    p.advance(-1);
   });
   var playButton = document.getElementById('play');
   playButton.addEventListener('click', function() {

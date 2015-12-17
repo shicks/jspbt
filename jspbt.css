@@ -21,6 +21,13 @@ body {
   overflow: hidden;
 }
 
+.cursor {
+  border: 1px solid white;
+  width: 7px !important; /* override #screen div span */
+  height: 14px; /* normally 8x15 */
+  margin-left: -1px;
+}
+
 .fg0:not(.rev), .bg0.rev {
   color: #000000;  /* black */
 }

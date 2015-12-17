@@ -67,6 +67,8 @@ export default class State {
     this.stack_ = [];
     this.element_ = null;
     this.data_ = [];
+
+    this.cursorElement_ = null;
   }
 
   /**
@@ -102,7 +104,7 @@ export default class State {
     }
 
     if (cols.length == 1) cols = [cols[0], row.length / 2];
-    if (cols[1] <= cols[0]) return [];
+    if (cols[1] <= cols[0]) return [[]];
     const ncols = cols[1] - cols[0];
     const cleared = [];
     if (row.length > 2 * cols[1]) cleared.length = 2 * ncols;
@@ -147,7 +149,7 @@ export default class State {
     if (this.element_) {
       const rowElem = sliceChildren(this.element_, row, row + 1, 'div')[0];
       const cells = sliceChildren(rowElem, col, col + out.length / 2, 'span');
-      for (let i = col; i < col + chars.length; i++) {
+      for (let i = col; i < col + out.length / 2; i++) {
         setCell(cells[i - col], rowData[2 * i], rowData[2 * i + 1]);
       }
     }
@@ -195,6 +197,7 @@ export default class State {
   /** @param {number} row */
   set r(row) {
     this.row_ = Math.max(1, row);
+    this.updateCursor_();
   }
 
   /** @return {number} Column index. */
@@ -204,6 +207,7 @@ export default class State {
   /** @param {number} column */
   set c(column) {
     this.column_ = Math.max(1, column);
+    this.updateCursor_();
   }
 
   /** @return {number} All flags. */
@@ -276,6 +280,19 @@ export default class State {
   /** @param {number} color */
   set bg(color) {
     this.flags_ = (this.flags_ & ~BG) | ((color & FG) << 3);
+  }
+
+  updateCursor_() {
+    if (this.cursorElement_) {
+      this.cursorElement_.classList.remove('cursor');
+    }
+    if (this.element_) {
+      this.cursorElement_ =
+          sliceChildren(
+              sliceChildren(this.element_, this.r, this.r + 1, 'div')[0],
+              this.c, this.c + 1, 'span')[0];
+      this.cursorElement_.classList.add('cursor');
+    }
   }
 }
 
