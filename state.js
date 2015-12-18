@@ -10,16 +10,20 @@ export default class State extends Cursor {
    * @param {number=} column
    * @param {number=} flags
    */
-  constructor(row = 0, column = 0, flags = /* Cursor.FG */ 7) {
+  constructor(e, row = 0, column = 0, flags = /* Cursor.FG */ 7) {
     super(row, column, flags);
 
     // TODO(sdh): add the element and chars directly here?!?
-    /** @private {?Element} */
-    this.grid_ = null;
-    /** @private {?Element} */
-    this.cursor_ = null;
+    /** @private @const {!Element} */
+    this.grid_ = getOrAdd(e, 'grid');
+    /** @private @const {!Element} */
+    this.cursor_ = getOrAdd(e, 'cursor');
     /** @private @const {!Array<!Array<number>>} */
     this.data_ = [];
+    /** @private @const {!Array<!Array<?Element>>} */
+    this.rows_ = [];
+    /** @private {boolean} */
+    this.playing_ = true;
   }
 
   /**
@@ -40,9 +44,11 @@ export default class State extends Cursor {
       while (this.data_.length < rows[0]) this.data_.push([]);
       const out = this.data_.splice(rows[0], nrows, ...cleared);
       while (out.size < nrows) out.push([]);
-      if (this.grid_) {
-        for (let row of sliceChildren(this.grid_, rows[0], rows[1], 'div')) {
-          resize(row, 0, 'span');
+      if (this.playing_) {
+        for (let row of this.rows_.slice(rows[0], rows[1])) {
+          for (let cell of row) {
+            cell.style.display = 'none';
+          }
         }
       }
       return out;
@@ -61,12 +67,10 @@ export default class State extends Cursor {
     if (row.length > 2 * cols[1]) cleared.length = 2 * ncols;
     const out = row.splice(2 * cols[0], 2 * ncols, ...cleared);
     out.size = 2 * ncols;
-    if (this.grid_) {
-      const rowElem =
-          sliceChildren(this.grid_, rows, rows + 1, 'div')[0];
-      for (let cell of sliceChildren(rowElem, cols[0], cols[1], 'span')) {
-        cell.className = '';
-        cell.textContent = ' ';
+    if (this.playing_) {
+      const cells = this.rows_[rows] || [];
+      for (let cell of cells.slice(cols[0], cols[1])) {
+        cell.style.display = 'none';
       }
     }
     return [out];
@@ -99,35 +103,63 @@ export default class State extends Cursor {
         rowData[2 * (col + i) + 1] = this.flags;
       }
     }
-    if (this.grid_) {
-      const rowElem = sliceChildren(this.grid_, row, row + 1, 'div')[0];
-      const cells = sliceChildren(rowElem, col, col + out.length / 2, 'span');
+    if (this.playing_) {
+      const cells = this.cells_(row, col, out.length / 2);
       for (let i = col; i < col + out.length / 2; i++) {
-        setCell(cells[i - col], rowData[2 * i], rowData[2 * i + 1]);
+        const cell = cells[i - col];
+        setCell(cell, rowData[2 * i], rowData[2 * i + 1]);
       }
     }
     return out;
   }
 
-  detach() {
-    this.grid_ = null;
-    this.cursor_ = null;
+  pause() {
+    this.playing_ = false;
   }
 
-  attach(/** !Element */ e) {
-    this.grid_ = getOrAdd(e, 'grid');
-    this.cursor_ = getOrAdd(e, 'cursor');
-    const rowElems = resize(this.grid_, this.data_.length, 'div');
-    for (let r = 0; r < this.data_.length; r++) {
-      const rowElem = rowElems[r];
-      const rowData = this.data_[r];
-      const cells = resize(rowElem, rowData.length / 2, 'span');
-      for (let c = 0; c < cells.length; c++) {
-        setCell(cells[c], rowData[2 * c], rowData[2 * c + 1]);
+  play() {
+    if (this.rows_.length < this.data_.length) {
+      this.cells_(this.data_.length - 1, 0, 1);
+    }
+    for (let r = 0; r < this.rows_.length; r++) {
+      const rowData = this.data_[r] || [];
+      const row = this.rows_[r];
+      if (row.length < rowData.length) {
+        this.cells_(r, 0, rowData.length);
+      }
+      for (let c = 0; c < row.length; c++) {
+        const cell = row[c];
+        if (rowData[2 * c]) {
+          setCell(cell, rowData[2 * c], rowData[2 * c + 1]);
+        } else {
+          cell.style.display = 'none';
+        }
       }      
     }
+    this.playing_ = true;
   }
-  
+
+  cells_(/** number */ r, /** number */ c, /** number */ n) {
+    while (this.rows_.length <= r) {
+      const e = document.createElement('div');
+      e.style.left = '0';
+      e.style.top = (this.rows_.length * 17 + 1) + 'px';
+      e.style.display = 'none';
+      this.grid_.appendChild(e);
+      this.rows_.push([e]);
+    }
+    const row = this.rows_[r];
+    const next = this.rows_.length > r + 1 ? this.rows_[r + 1][0] : null;
+    while (row.length < c + n) {
+      const e = document.createElement('div');
+      e.style.left = (row.length * 8) + 'px';
+      e.style.top = (r * 17 + 1) + 'px';
+      e.style.display = 'none';
+      this.grid_.insertBefore(e, next);
+      row.push(e);
+    }
+    return row.slice(c, c + n);
+  }
 
   // TODO(sdh): clone method? diff method that returns a
   // sequence of setters to change the state from A to B?
@@ -153,27 +185,6 @@ function getOrAdd(/** !Element */ e, /** string */ cls) {
   return child;
 }
 
-
-/** @return {!IArrayLike<!Element>} */
-function resize(/** !Element */ elem, /** number */ len, /** string */ tag) {
-  while (elem.children.length < len) {
-    elem.appendChild(document.createElement(tag));
-  }
-  while (elem.children.length > len) {
-    elem.children[len].remove();
-  }
-  return elem.children;
-}
-
-/** @return {!Array<!Element>} */
-function sliceChildren(/** !Element */ elem,
-    /** number */ start, /** number */ end, /** string */ tag) {
-  while (elem.children.length < end) {
-    elem.appendChild(document.createElement(tag));
-  }
-  return [].slice.call(elem.children, start, end);
-}
-
 /**
  * @return {!Array<T>}
  * @template T
@@ -185,6 +196,7 @@ function getOrEmpty(/** !Array<!Array<T>> */ arr, /** number */ index) {
 
 function setCell(/** !Element */ elem,
     /** string|number|undefined */ txt, /** string|number|undefined */ flags) {
+  elem.style.display = 'block';
   if (txt && txt.length > 1) txt = txt.substring(0, 1);
   elem.textContent = txt ? String(txt) : ' ';
   flags = flags ? Number(flags) : 0;

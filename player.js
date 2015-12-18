@@ -167,8 +167,7 @@ function player(ttyRec, terminal) {
  */
 function terminalEmulator(e) {
 
-  var state = new State();
-  state.attach(e);
+  var state = new State(e);
   var reader = new Reader();
 
   function hexDump(data) {
@@ -198,8 +197,8 @@ function terminalEmulator(e) {
   }
 
   return {
-    attach() { state.attach(e); },
-    detach() { state.detach(); },
+    attach() { state.play(); },
+    detach() { state.pause(); },
 
     write: function(/** !Array<!Command> */ cmds) {
       //hexDump(data); // Log the packet

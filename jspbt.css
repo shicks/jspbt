@@ -12,16 +12,15 @@ body {
   background: black;
   color: gray;
   white-space: pre;
+  position: relative;
+  width: 100%;
+  height: 100%;
 }
 
 #screen .grid div {
   height: 17px;
-  overflow: hidden;
-}
-
-#screen .grid div span {
-  width: 8px; /* NOTE: font-dependent...? */
-  display: inline-block;
+  width: 8px;
+  position: absolute;
   overflow: hidden;
 }
 
