@@ -4,24 +4,30 @@ body {
 }
 
 #screen {
+  position: relative;
+}
+
+#screen .grid {
   font-family: monospace;
   background: black;
   color: gray;
   white-space: pre;
 }
 
-#screen div {
+#screen .grid div {
   height: 17px;
   overflow: hidden;
 }
 
-#screen div span {
-  width: 8px; /* NOTE: font-dependent... */
+#screen .grid div span {
+  width: 8px; /* NOTE: font-dependent...? */
   display: inline-block;
   overflow: hidden;
 }
 
-.cursor {
+#screen .cursor {
+  position: absolute;
+  display: block;
   border: 1px solid white;
   width: 7px !important; /* override #screen div span */
   height: 14px; /* normally 8x15 */

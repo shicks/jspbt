@@ -1,74 +1,25 @@
-'use strict';
-
-// TODO(sdh):
-//   - pull out a superclass of State that just holds the
-//     cursor position
-//   - each frame saves the initial cursor state at the start
-//   - specialized subclass that doesn't keep track of actual
-//     data, but only watches whether a particular CellRange
-//     has been touched - use by filters to keep certain text
-//     up to date - don't bother redrawing if not changed.
-//   - filters will get passed a frame and can manipulate it
-//     in various ways -> might change duration, or add commands, etc
-//      -> replay existing commands from start cursor to see what happens
-//   - Filters:
-//      - add a timestamp (probably minute only) to a given range
-//        (e.g. row 25, or whatever is beneath the bottom)
-//      - add a commentary in corner - can appear and disappear, change
-//         -> key off time or frame id
-//         -> to disappear, will need to store what's covered up.
-//      - shorten long gaps, add gaps, speed/slow, etc
-//      - delete text interruptions? (incremental changes afterward)
-//        - replay the commands with the different interstitial: pay
-//          attention to whether any chars actually changed, and if not
-//          then delete the command --> successive compression passes could
-//          then delete redundant cursor moves, canonicalize e.g.
-//          [move,attr,move,attr] into [move..., attr...] which we can
-//          then consolidate.
-//      - move text interruptions to column 80?
-//        - pattern-match on commands, e.g. repeated Move(r++, c>50 | c==1)
-//          followed by EraseInLineEnd, then text (with maybe colors but mostly
-//          letters/numbers and only a couple different colors per line)
-//   - frames also store byte length, #commands, duration, keyframe, etc.
-//      - occasionally can make an "ad hoc" keyframe if too infrequent
-//   - group frames into constant #, constant bytes, constant time
-//      - "summarize" by keeping a running "entropy" of words/phrases
-//      - display only the most interesting (so far) phrase in all
-//        the contained frames - first appearance will be interesting
-//        but will get boring later.  words should be /\w+/, so not
-//        walls/punctuation/etc.
-//      - drill down into frames, then groups of commands, etc
-//   - switch to writing on a canvas? then we can snapshot some frames
-//     as pngs, say every minute/50kbytes or so?  or after at least
-//     half the screen has been updated (note: clearing for text is
-//     not so interesting - possibly check for colors? walls? edit
-//     distance to last non-text-only frame that was snapshotted?)
-
+import Cursor from './cursor';
 
 /**
  * Stores the state of the cursor, with bounds checking
  * on the setters.
  */
-export default class State {
+export default class State extends Cursor {
   /**
    * @param {number=} row
    * @param {number=} column
    * @param {number=} flags
    */
-  constructor(row = 0, column = 0, flags = FG) {
-    /** @private {number} Row index */
-    this.row_ = row;
-    /** @private {number} Column index */
-    this.column_ = column;
-    /** @private {number} Colors, boldness, etc */
-    this.flags_ = flags;
+  constructor(row = 0, column = 0, flags = /* Cursor.FG */ 7) {
+    super(row, column, flags);
 
     // TODO(sdh): add the element and chars directly here?!?
-    this.stack_ = [];
-    this.element_ = null;
+    /** @private {?Element} */
+    this.grid_ = null;
+    /** @private {?Element} */
+    this.cursor_ = null;
+    /** @private @const {!Array<!Array<number>>} */
     this.data_ = [];
-
-    this.cursorElement_ = null;
   }
 
   /**
@@ -89,8 +40,8 @@ export default class State {
       while (this.data_.length < rows[0]) this.data_.push([]);
       const out = this.data_.splice(rows[0], nrows, ...cleared);
       while (out.size < nrows) out.push([]);
-      if (this.element_) {
-        for (let row of sliceChildren(this.element_, rows[0], rows[1], 'div')) {
+      if (this.grid_) {
+        for (let row of sliceChildren(this.grid_, rows[0], rows[1], 'div')) {
           resize(row, 0, 'span');
         }
       }
@@ -110,9 +61,9 @@ export default class State {
     if (row.length > 2 * cols[1]) cleared.length = 2 * ncols;
     const out = row.splice(2 * cols[0], 2 * ncols, ...cleared);
     out.size = 2 * ncols;
-    if (this.element_) {
+    if (this.grid_) {
       const rowElem =
-          sliceChildren(this.element_, rows, rows + 1, 'div')[0];
+          sliceChildren(this.grid_, rows, rows + 1, 'div')[0];
       for (let cell of sliceChildren(rowElem, cols[0], cols[1], 'span')) {
         cell.className = '';
         cell.textContent = ' ';
@@ -124,6 +75,8 @@ export default class State {
   /**
    * If row/column are given, then cursor is not advanced.
    * @param {string|!Array<string|number|undefined>} chars
+   * @param {?number=} row
+   * @param {?number=} col
    * @return {!Array<string|number|undefined>} The overwritten data.
    */
   write(chars, row = null, col = null) {
@@ -143,11 +96,11 @@ export default class State {
       out.length = 2 * chars.length; // just in case it's too small
       for (let i = 0; i < chars.length; i++) {
         rowData[2 * (col + i)] = chars[i];
-        rowData[2 * (col + i) + 1] = this.flags_;
+        rowData[2 * (col + i) + 1] = this.flags;
       }
     }
-    if (this.element_) {
-      const rowElem = sliceChildren(this.element_, row, row + 1, 'div')[0];
+    if (this.grid_) {
+      const rowElem = sliceChildren(this.grid_, row, row + 1, 'div')[0];
       const cells = sliceChildren(rowElem, col, col + out.length / 2, 'span');
       for (let i = col; i < col + out.length / 2; i++) {
         setCell(cells[i - col], rowData[2 * i], rowData[2 * i + 1]);
@@ -156,26 +109,15 @@ export default class State {
     return out;
   }
 
-  save(/** ?Array<number>= */ state = null) {
-    if (!state) state = [this.row_, this.column_, this.flags_];
-    this.stack_.push(...state);
-  }
-  /** @return {!Array<number>} */
-  restore() {
-    const state = [this.flags_, this.column_, this.row_];
-    this.flags_ = this.stack_.pop();
-    this.column_ = this.stack_.pop();
-    this.row_ = this.stack_.pop();
-    return state;
-  }
-
   detach() {
-    this.element_ = null;
+    this.grid_ = null;
+    this.cursor_ = null;
   }
 
   attach(/** !Element */ e) {
-    this.element_ = e;
-    const rowElems = resize(this.element_, this.data_.length, 'div');
+    this.grid_ = getOrAdd(e, 'grid');
+    this.cursor_ = getOrAdd(e, 'cursor');
+    const rowElems = resize(this.grid_, this.data_.length, 'div');
     for (let r = 0; r < this.data_.length; r++) {
       const rowElem = rowElems[r];
       const rowData = this.data_[r];
@@ -190,128 +132,26 @@ export default class State {
   // TODO(sdh): clone method? diff method that returns a
   // sequence of setters to change the state from A to B?
 
-  /** @return {number} Row index. */
-  get r() {
-    return this.row_;
-  }
-  /** @param {number} row */
-  set r(row) {
-    this.row_ = Math.max(1, row);
-    this.updateCursor_();
-  }
 
-  /** @return {number} Column index. */
-  get c() {
-    return this.column_;
-  }
-  /** @param {number} column */
-  set c(column) {
-    this.column_ = Math.max(1, column);
-    this.updateCursor_();
-  }
-
-  /** @return {number} All flags. */
-  get flags() {
-    return this.flags_;
-  }
-  /** @param {number} flags */
-  set flags(flags) {
-    this.flags_ = flags & 2047;
-  }
-
-  /** @return {boolean} Bold state. */
-  get b() {
-    return !!(this.flags_ & BOLD);
-  }
-  /** @param {boolean} bold */
-  set b(bold) {
-    this.flags_ = bold ? this.flags_ | BOLD : this.flags_ & ~BOLD;
-  }
-
-  /** @return {boolean} Italic state. */
-  get i() {
-    return !!(this.flags_ & ITALIC);
-  }
-  /** @param {boolean} italic */
-  set i(italic) {
-    this.flags_ = italic ? this.flags_ | ITALIC : this.flags_ & ~ITALIC;
-  }
-
-  /** @return {boolean} Underline state. */
-  get u() {
-    return !!(this.flags_ & UNDERLINE);
-  }
-  /** @param {boolean} ul */
-  set u(ul) {
-    this.flags_ = ul ? this.flags_ | UNDERLINE : this.flags_ & ~UNDERLINE;
-  }
-
-  /** @return {boolean} Blink state. */
-  get bl() {
-    return !!(this.flags_ & BLINK);
-  }
-  /** @param {boolean} blink */
-  set bl(blink) {
-    this.flags_ = blink ? this.flags_ | BLINK : this.flags_ & ~BLINK;
-  }
-
-  /** @return {boolean} Reverse video state. */
-  get rev() {
-    return !!(this.flags_ & REVERSE);
-  }
-  /** @param {boolean} reverse */
-  set rev(reverse) {
-    this.flags_ = reverse ? this.flags_ | REVERSE : this.flags_ & ~REVERSE;
-  }
-
-  /** @return {number} Foreground color. */
-  get fg() {
-    return this.flags_ & FG;
-  }
-  /** @param {number} color */
-  set fg(color) {
-    this.flags_ = (this.flags_ & ~FG) | (color & FG);
-  }
-
-  /** @return {number} Background color. */
-  get bg() {
-    return (this.flags_ & BG) >>> 3;
-  }
-  /** @param {number} color */
-  set bg(color) {
-    this.flags_ = (this.flags_ & ~BG) | ((color & FG) << 3);
-  }
-
-  updateCursor_() {
-    if (this.cursorElement_) {
-      this.cursorElement_.classList.remove('cursor');
-    }
-    if (this.element_) {
-      this.cursorElement_ =
-          sliceChildren(
-              sliceChildren(this.element_, this.r, this.r + 1, 'div')[0],
-              this.c, this.c + 1, 'span')[0];
-      this.cursorElement_.classList.add('cursor');
+  updateCursor(r, c) {
+    if (this.cursor_) {
+      this.cursor_.style.top = (r * 17 + 1) + 'px';
+      this.cursor_.style.left = (c * 8) + 'px';
     }
   }
 }
 
 
-const FG = 1 | 2 | 4;
-const BG = 8 | 16 | 32;
-const BOLD = 64
-const ITALIC = 128;
-const UNDERLINE = 256;
-const BLINK = 512;
-const REVERSE = 1024;
-
-State.FG = FG;
-State.BG = BG;
-State.BOLD = BOLD;
-State.ITALIC = ITALIC;
-State.UNDERLINE = UNDERLINE;
-State.BLINK = BLINK;
-State.REVERSE = REVERSE;
+/** @return {!Element} Child div with the given class (possibly added). */
+function getOrAdd(/** !Element */ e, /** string */ cls) {
+  let child = e.querySelector('.' + cls);
+  if (!child) {
+    child = document.createElement('div');
+    child.classList.add(cls);
+    e.appendChild(child);
+  }
+  return child;
+}
 
 
 /** @return {!IArrayLike<!Element>} */
@@ -349,11 +189,11 @@ function setCell(/** !Element */ elem,
   elem.textContent = txt ? String(txt) : ' ';
   flags = flags ? Number(flags) : 0;
   elem.className = '';
-  if (flags & BOLD) elem.classList.add('b');
-  if (flags & ITALIC) elem.classList.add('i');
-  if (flags & UNDERLINE) elem.classList.add('u');
-  if (flags & BLINK) elem.classList.add('bl');
-  if (flags & REVERSE) elem.classList.add('rev');
-  elem.classList.add('fg' + (flags & FG));
-  elem.classList.add('bg' + ((flags >>> 3) & FG));
+  if (flags & Cursor.BOLD) elem.classList.add('b');
+  if (flags & Cursor.ITALIC) elem.classList.add('i');
+  if (flags & Cursor.UNDERLINE) elem.classList.add('u');
+  if (flags & Cursor.BLINK) elem.classList.add('bl');
+  if (flags & Cursor.REVERSE) elem.classList.add('rev');
+  elem.classList.add('fg' + (flags & Cursor.FG));
+  elem.classList.add('bg' + ((flags >>> 3) & Cursor.FG));
 }
