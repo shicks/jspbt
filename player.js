@@ -202,9 +202,9 @@ function terminalEmulator(e) {
 
     write: function(/** !Array<!Command> */ cmds) {
       //hexDump(data); // Log the packet
-      console.log("---------------------New Frame---------------------");
+      //console.log("---------------------New Frame---------------------");
       for (let cmd of cmds) {
-        console.log(String(cmd));
+        //console.log(String(cmd));
         cmd.apply(state);
       }
     },

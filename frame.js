@@ -1,4 +1,5 @@
 
+import Cursor from './cursor';
 import Command from './command';
 import Reader from './reader';
 
@@ -12,6 +13,10 @@ export default class Frame {
     this.durationMs_ = 0;
     /** @private {boolean} */
     this.keyframe_ = false;
+    /** @private {?Cursor} */
+    this.startCursor_ = null;
+    /** @private {?Cursor} */
+    this.endCursor_ = null;
   }
 
   /** Parses a TTYRec file into many frames. */
