@@ -80,7 +80,10 @@ function ttyRec(buf) {
     },
     advance: function() {
       frame++;
-    }
+    },
+    eof: function() {
+      return !load();
+    },
   };
 }
 
@@ -142,6 +145,26 @@ function player(ttyRec, terminal) {
     },
     detach() {terminal.detach();},
     attach() {terminal.attach();},
+    searchForward(word) {
+      let keyframe = ttyRec.frame();
+      let result = -1;
+      while (!ttyRec.eof() && result < 0) {
+        ttyRec.advance();
+        for (let c of ttyRec.commands()) {
+          if (c.keyframe) keyframe = ttyRec.frame() - 1;
+          if (c.text.indexOf(word) >= 0) {
+            result = ttyRec.frame();
+            break;
+          }
+        }
+      }
+      if (result >= 0) {
+        terminal.detach();
+        ttyRec.setFrame(keyframe);
+        advance(result - keyframe);
+        terminal.attach();
+      } // else - indicate not found somehow...?
+    },
     advance: advance,
     speed: function() { return speed; },
     setSpeed: function(newSpeed) {
@@ -154,9 +177,6 @@ function player(ttyRec, terminal) {
   return player;
 }
 
-
-// TODO(sdh): caching ttyRec wrapper that keeps track of all the \e[2J it sees
-// Provides a "previous frame" function that redraws cleverly...?
 
 // TODO(sdh): something to handle timer/cancelling
 
@@ -309,6 +329,11 @@ function loadTtyRec(buf) {
     p.advance(-100);
     p.attach();
   });
+  var search = document.getElementById('search');
+  document.getElementById('searchfwd').addEventListener('click', function() {
+    p.searchForward(search.value);
+  });
+
   var playButton = document.getElementById('play');
   playButton.addEventListener('click', function() {
     var play = playButton.value == 'play';

@@ -17,6 +17,9 @@ export default class Command {
   /** @return {boolean} */
   get keyframe() { return false; }
 
+  /** @return {string} */
+  get text() { return ''; }
+
   /** @return {?Command} */
   static parse(/** !Reader */ reader) {
     const chars = [];
@@ -95,6 +98,7 @@ class Characters extends Command {
     this.undo_ = [];
   }
   get ansi() { return this.chars_; }
+  get text() { return this.chars_; }
   apply(s) {
     this.undo_ = s.write(this.chars_);
   }
